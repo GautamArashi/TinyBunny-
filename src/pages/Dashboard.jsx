@@ -9,6 +9,7 @@ import FeatureCard from '../components/dashboard/FeatureCard.jsx'
 import UsageOverview from '../components/dashboard/UsageOverview.jsx'
 import RecentRuns from '../components/dashboard/RecentRuns.jsx'
 import { cleanStaleRunningRecords } from '../services/runHistory.js'
+import PoweredBy from '../components/branding/PoweredBy.tsx'
 
 const features = [
   {
@@ -55,6 +56,9 @@ export default function Dashboard() {
           <p className="mt-2 text-sm sm:text-base text-neutral-400 leading-relaxed">
             Your workspace for web search, content extraction, and browser automation.
           </p>
+          <div className="mt-4">
+            <PoweredBy variant="pill" />
+          </div>
         </div>
       </section>
 
@@ -129,6 +133,9 @@ export default function Dashboard() {
           </div>
         </div>
       </section>
+
+      {/* Platform Attribution Footer */}
+      <PoweredBy variant="footer" className="mt-8 pt-4" />
     </div>
   )
 }

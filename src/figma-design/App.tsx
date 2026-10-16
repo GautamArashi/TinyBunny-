@@ -7,6 +7,7 @@ import {
   API_BASE_URL,
 } from "../services/api.js"
 import { Mascot } from "page-mascot"
+import { PoweredBy } from "../components/branding/PoweredBy.tsx"
 import { normalizeSearchResults } from "../utils/normalizeSearchResults.js"
 import {
   createRecord,
@@ -313,6 +314,9 @@ function Dashboard({ navigate }: { navigate: (route: Route) => void }) {
             <Button variant="primary" icon="spark" onClick={() => navigate("agent")}>Start an agent run</Button>
             <Button icon="search" onClick={() => navigate("search")}>Open Search Lab</Button>
           </div>
+          <div style={{ marginTop: "18px" }}>
+            <PoweredBy variant="pill" />
+          </div>
         </div>
         <div className="hero-visual" aria-hidden="true">
           <div className="orbit orbit-one" /><div className="orbit orbit-two" />
@@ -417,6 +421,8 @@ function Dashboard({ navigate }: { navigate: (route: Route) => void }) {
           <Button onClick={() => navigate("settings")} className="full">Review configuration</Button>
         </Card>
       </div>
+
+      <PoweredBy variant="footer" />
     </>
   )
 }

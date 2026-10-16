@@ -6,12 +6,14 @@
 import axios from 'axios'
 
 // Configurable backend base URL from Vite environment with local development fallback
+
 const rawBaseUrl =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
+  import.meta.env.VITE_API_BASE_URL ||
   'http://localhost:5000/api'
 
-// Ensure baseURL ends with /api
-export const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '').endsWith('/api')
+export const API_BASE_URL = rawBaseUrl
+  .replace(/\/+$/, '')
+  .endsWith('/api')
   ? rawBaseUrl.replace(/\/+$/, '')
   : `${rawBaseUrl.replace(/\/+$/, '')}/api`
 
@@ -20,8 +22,10 @@ export const apiClient = axios.create({
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
 })
+
 
 /**
  * Checks local backend service health status.
