@@ -21,6 +21,11 @@ import {
   extractNumOfSteps,
   getStorageUsage,
 } from "../services/runHistory.js"
+import {
+  isValidStreamingUrl,
+  extractStreamingUrl,
+  safeHostname,
+} from "../services/streaming.js"
 
 type Route = "dashboard" | "search" | "fetch" | "agent" | "history" | "settings"
 type Tone = "neutral" | "success" | "warning" | "danger" | "info" | "accent"
@@ -222,33 +227,7 @@ function Metric({
   )
 }
 
-/**
- * Validates that an agent streaming URL is strictly an HTTPS URL on a TinyFish-controlled domain.
- */
-function isValidStreamingUrl(urlStr: string | null | undefined): boolean {
-  if (!urlStr || typeof urlStr !== "string") return false
-  try {
-    const parsed = new URL(urlStr)
-    if (parsed.protocol !== "https:") return false
-    const host = parsed.hostname.toLowerCase()
-    return host === "tinyfish.ai" || host.endsWith(".tinyfish.ai")
-  } catch {
-    return false
-  }
-}
-
-/**
- * Safely extracts hostname for display without throwing on un-prefixed or malformed URLs.
- */
-function safeHostname(urlStr: string | null | undefined): string {
-  if (!urlStr || typeof urlStr !== "string" || !urlStr.trim()) return "No preview session"
-  try {
-    const candidate = urlStr.startsWith("http://") || urlStr.startsWith("https://") ? urlStr : `https://${urlStr}`
-    return new URL(candidate).hostname || urlStr
-  } catch {
-    return urlStr
-  }
-}
+// Note: isValidStreamingUrl, extractStreamingUrl, and safeHostname are imported from ../services/streaming.js
 
 /* ========================================================================== */
 /* SECTION: DASHBOARD                                                        */
@@ -835,6 +814,7 @@ function AgentLab() {
   const [finalResult, setFinalResult] = useState<any>(null)
   const [runId, setRunId] = useState<string | null>(null)
   const [streamingUrl, setStreamingUrl] = useState<string | null>(null)
+  const [streamingSecurityWarning, setStreamingSecurityWarning] = useState<string | null>(null)
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null)
   const [startTimeMs, setStartTimeMs] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -854,6 +834,7 @@ function AgentLab() {
     setFinalResult(null)
     setRunId(null)
     setStreamingUrl(null)
+    setStreamingSecurityWarning(null)
 
     const started = Date.now()
     setStartTimeMs(started)
@@ -876,7 +857,7 @@ function AgentLab() {
           setEvents((previous) => [...previous, { event, data, timestamp }])
 
           // Handle STARTED
-          if (event === "STARTED" || data?.type === "STARTED") {
+          if (event === "STARTED" || data?.type === "STARTED" || data?.event === "STARTED") {
             const providerId = data?.run_id || null
             if (providerId) {
               setRunId(providerId)
@@ -885,10 +866,46 @@ function AgentLab() {
           }
 
           // Handle STREAMING_URL
-          if (event === "STREAMING_URL" || data?.type === "STREAMING_URL") {
-            if (data?.url && typeof data.url === "string") {
-              setStreamingUrl(data.url)
+          if (event === "STREAMING_URL" || data?.type === "STREAMING_URL" || data?.event === "STREAMING_URL") {
+            const candidateUrl = extractStreamingUrl(data)
+
+            if (candidateUrl) {
+              if (isValidStreamingUrl(candidateUrl)) {
+                setStreamingUrl(candidateUrl)
+                setStreamingSecurityWarning(null)
+                if (import.meta.env.DEV) {
+                  console.debug("[TinyBunny SSE] Valid live streaming URL received:", safeHostname(candidateUrl))
+                }
+              } else {
+                const blockedHost = safeHostname(candidateUrl)
+                setStreamingSecurityWarning(`Live streaming URL (${blockedHost}) rejected by security policy (untrusted domain or non-HTTPS).`)
+                console.warn("[TinyBunny SSE] Streaming URL rejected by security policy:", candidateUrl)
+              }
             }
+          }
+
+          // Handle ERROR event
+          if (event === "ERROR" || data?.type === "ERROR" || data?.event === "ERROR") {
+            const errorMsg =
+              typeof data === "string"
+                ? data
+                : data?.error || data?.message || "Agent execution error occurred."
+            setRunning(false)
+            setCompleted(true)
+            const elapsed = Date.now() - started
+            setFinalResult({
+              isGoalSuccess: false,
+              goalFailureReason: errorMsg,
+              infraStatus: "FAILED",
+              durationMs: elapsed,
+            })
+            updateRecord(record.id, {
+              status: "failed",
+              completedAt: new Date().toISOString(),
+              durationMs: elapsed,
+              errorMessage: errorMsg,
+              resultSummary: errorMsg,
+            })
           }
 
           // Handle COMPLETE
@@ -1096,6 +1113,7 @@ function AgentLab() {
           result={finalResult}
           runId={runId}
           streamingUrl={streamingUrl}
+          streamingSecurityWarning={streamingSecurityWarning}
           targetUrl={url}
           onCancel={cancelRun}
           onReset={() => {
@@ -1148,6 +1166,7 @@ function ExecutionWorkspace({
   result,
   runId,
   streamingUrl,
+  streamingSecurityWarning,
   targetUrl,
   onCancel,
   onReset,
@@ -1158,6 +1177,7 @@ function ExecutionWorkspace({
   result: any
   runId: string | null
   streamingUrl: string | null
+  streamingSecurityWarning?: string | null
   targetUrl: string
   onCancel: () => void
   onReset: () => void
@@ -1225,7 +1245,13 @@ function ExecutionWorkspace({
               } else if (eventType === "STARTED") {
                 messageText = `Agent session started${item.data?.run_id ? ` (ID: ${item.data.run_id})` : ""}`
               } else if (eventType === "STREAMING_URL") {
-                messageText = `Live browser stream ready: ${item.data?.url || ""}`
+                const streamUrl =
+                  typeof item.data === "object" && item.data !== null
+                    ? item.data.streaming_url || item.data.url || item.data.stream_url || ""
+                    : typeof item.data === "string" && (item.data.startsWith("http://") || item.data.startsWith("https://"))
+                    ? item.data
+                    : ""
+                messageText = streamUrl ? `Live browser stream ready: ${streamUrl}` : "Live browser stream initialized"
               } else if (eventType === "HEARTBEAT") {
                 messageText = "Heartbeat received — agent session active"
               } else if (eventType === "COMPLETE") {
@@ -1275,7 +1301,7 @@ function ExecutionWorkspace({
               <div className="browser-dots"><i /><i /><i /></div>
               <div className="browser-url">
                 <Icon name="shield" size={12} />
-                <span>{isStreamingSafe ? "live.streaming.tinyfish.ai" : safeHostname(targetUrl)}</span>
+                <span>{isStreamingSafe && streamingUrl ? safeHostname(streamingUrl) : safeHostname(targetUrl)}</span>
               </div>
               {isStreamingSafe && streamingUrl && (
                 <a
@@ -1296,8 +1322,28 @@ function ExecutionWorkspace({
                   src={streamingUrl}
                   title="Live Agent Browser Session"
                   style={{ width: "100%", height: "100%", border: 0, minHeight: "280px" }}
-                  sandbox="allow-scripts allow-same-origin"
+                  sandbox="allow-scripts allow-same-origin allow-forms"
+                  allow="autoplay; encrypted-media"
                 />
+              ) : streamingSecurityWarning ? (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "100%",
+                    minHeight: "240px",
+                    color: "#f87171",
+                    textAlign: "center",
+                    padding: "20px",
+                  }}
+                >
+                  <Icon name="shield" size={24} />
+                  <p style={{ marginTop: "10px", fontSize: "12px", maxWidth: "320px", lineHeight: "1.5" }}>
+                    {streamingSecurityWarning}
+                  </p>
+                </div>
               ) : (
                 <div
                   style={{
@@ -1316,6 +1362,8 @@ function ExecutionWorkspace({
                   <p style={{ marginTop: "10px", fontSize: "11px", maxWidth: "260px", lineHeight: "1.5" }}>
                     {running
                       ? "Awaiting live streaming browser URL from TinyFish…"
+                      : completed
+                      ? "Live browser stream session has ended or was not provided."
                       : "Live browser streaming will appear when the provider activates the stream."}
                   </p>
                 </div>

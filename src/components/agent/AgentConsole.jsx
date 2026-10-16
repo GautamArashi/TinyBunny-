@@ -16,23 +16,8 @@ import {
   Radio,
 } from 'lucide-react'
 
-/**
- * Validates that a streaming preview URL is strictly an HTTPS URL on a TinyFish-controlled domain.
- *
- * @param {string} urlStr
- * @returns {boolean} True if safe TinyFish streaming host
- */
-export function isValidStreamingUrl(urlStr) {
-  if (!urlStr || typeof urlStr !== 'string') return false
-  try {
-    const parsed = new URL(urlStr)
-    if (parsed.protocol !== 'https:') return false
-    const host = parsed.hostname.toLowerCase()
-    return host === 'tinyfish.ai' || host.endsWith('.tinyfish.ai')
-  } catch {
-    return false
-  }
-}
+import { isValidStreamingUrl } from '../../services/streaming.js'
+export { isValidStreamingUrl }
 
 export default function AgentConsole({
   events = [],

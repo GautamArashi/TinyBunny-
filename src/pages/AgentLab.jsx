@@ -21,6 +21,7 @@ import AgentConsole from '../components/agent/AgentConsole.jsx'
 import AgentResultPanel from '../components/agent/AgentResultPanel.jsx'
 import ErrorState from '../components/common/ErrorState.jsx'
 import { streamAgentRun, checkBackendHealth } from '../services/api.js'
+import { isValidStreamingUrl, extractStreamingUrl } from '../services/streaming.js'
 import {
   createRecord,
   updateRecord,
@@ -135,8 +136,11 @@ export default function AgentLab() {
               })
             }
           }
-        } else if (event === 'STREAMING_URL' || data?.type === 'STREAMING_URL') {
-          if (data?.url) setStreamingUrl(data.url)
+        } else if (event === 'STREAMING_URL' || data?.type === 'STREAMING_URL' || data?.event === 'STREAMING_URL') {
+          const candidateUrl = extractStreamingUrl(data)
+          if (candidateUrl && isValidStreamingUrl(candidateUrl)) {
+            setStreamingUrl(candidateUrl)
+          }
         } else if (event === 'COMPLETE' || data?.type === 'COMPLETE') {
           const endTimeStr = new Date().toLocaleTimeString()
           const infraStatus = data?.status || 'COMPLETED'
